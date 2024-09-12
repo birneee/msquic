@@ -13,36 +13,25 @@
           };
         in
         {
-          packages.secnetperf = pkgs.stdenv.mkDerivation {
+          packages.msquic = pkgs.stdenv.mkDerivation {
             name = "secnetperf";
             src = self;
-            nativeBuildInputs = with pkgs; [
-                cmake
-            ];
             buildInputs= with pkgs; [
+                cmake
                 numactl
                 git
                 perl
             ];
-            cmakeFlags = [
-                "-DQUIC_TLS=openssl3"
-                "-DQUIC_BUILD_PERF=ON"
-                "-DQUIC_BUILD_SHARED=OFF"
-            ];
-            buildFlags = [
-                "secnetperf"
-            ];
-            patchPhase = ''
-                patchShebangs --build submodules/openssl3/Configure
-            '';
-            installPhase = ''
-                #TODO export msquic
+            buildPhase = ''
+                patchShebangs --build $TMP/source/submodules/openssl3/Configure
+                cmake -DCMAKE_BUILD_TYPE=Release -DQUIC_TLS=openssl3 -DQUIC_BUILD_PERF=ON -DQUIC_BUILD_SHARED=OFF -S $TMP/source -B $TMP/source/build
+                cmake --build $TMP/source/build --target secnetperf -- -j 10
                 mkdir $out
                 mkdir $out/bin
-                cp $TMP/source/build/bin/Release/secnetperf $out/bin
+                mv $TMP/source/build/bin/Release/secnetperf $out/bin/
             '';
           };
-          packages.default = self.packages.${system}.secnetperf;
+          packages.default = self.packages.${system}.msquic;
         }
       );
 }
