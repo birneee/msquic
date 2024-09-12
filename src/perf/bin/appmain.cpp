@@ -338,7 +338,7 @@ Exit:
     }
 
     CxPlatUninitialize();
-    CxPlatSystemUnload();
+    //CxPlatSystemUnload(); //TODO causes double free
 
     return Status;
 }
