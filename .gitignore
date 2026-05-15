@@ -391,3 +391,6 @@ APKBUILD
 
 # Temporary package download folder by validation script
 msquic-packages/
+
+#nix
+result

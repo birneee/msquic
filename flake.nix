@@ -2,36 +2,71 @@
   description = "qperf-msquic";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-parts.url = "github:hercules-ci/flake-parts";
   };
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem
-      (system:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-          };
-        in
+  outputs =
+    inputs@{ flake-parts, self, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      perSystem =
+        { pkgs, ... }:
         {
-          packages.msquic = pkgs.stdenv.mkDerivation {
-            name = "secnetperf";
+          packages.default = pkgs.stdenv.mkDerivation {
+            name = "msquic";
             src = self;
-            buildInputs= with pkgs; [
+            strictDeps = true;
+            nativeBuildInputs =
+              with pkgs;
+              [
                 cmake
-                numactl
-                git
                 perl
+              ]
+              ++ lib.optionals stdenv.hostPlatform.isLinux [
+                autoPatchelfHook
+              ];
+            buildInputs =
+              with pkgs;
+              [ libatomic_ops ]
+              ++ lib.optionals stdenv.hostPlatform.isLinux [
+                stdenv.cc.cc.lib
+                lttng-tools
+              ];
+            cmakeFlags = [
+              "-DQUIC_BUILD_TOOLS=ON"
+              "-DQUIC_BUILD_PERF=ON"
             ];
-            buildPhase = ''
-                patchShebangs --build $TMP/source/submodules/openssl3/Configure
-                cmake -DCMAKE_BUILD_TYPE=Release -DQUIC_TLS=openssl3 -DQUIC_BUILD_PERF=ON -DQUIC_BUILD_SHARED=OFF -S $TMP/source -B $TMP/source/build
-                cmake --build $TMP/source/build --target secnetperf -- -j 10
-                mkdir $out
-                mkdir $out/bin
-                mv $TMP/source/build/bin/Release/secnetperf $out/bin/
+            # https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/li/libmsquic/package.nix#L49
+            postUnpack = with pkgs; ''
+              for f in "$(find . -type f -name "*.pl")"; do
+                patchShebangs --build $f 2>&1 > /dev/null
+              done
+              for g in $(find . -type f -name "*"); do
+                if test -f $g; then
+                  sed -i "s|/usr/bin/env|${coreutils}/bin/env|g" $g
+                fi
+              done
+            '';
+            installPhase = ''
+              runHook preInstall
+              cmake --install . --prefix $out
+              mkdir -p $out/bin
+              find bin -mindepth 2 -maxdepth 2 -type f ! -name "*.so*" -exec cp {} $out/bin/ \;
+              runHook postInstall
+            '';
+            preFixup = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+              for f in $out/bin/*; do
+                if [ -f "$f" ] && [ -x "$f" ]; then
+                  patchelf --set-rpath "$out/lib" "$f"
+                fi
+              done
+              autoPatchelfLibs+=($out/lib)
             '';
           };
-          packages.default = self.packages.${system}.msquic;
-        }
-      );
+        };
+    };
 }
